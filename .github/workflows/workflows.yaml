@@ -1,0 +1,58 @@
+name: EKS Cloud Infrastructure CI/CD
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and Push Docker images
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: st6/project-ecr
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # 1. FastAPI 빌드 및 푸시
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:fastapi-$IMAGE_TAG ./fastapi
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:fastapi-$IMAGE_TAG
+          
+          # 2. Nginx 빌드 및 푸시
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:nginx-$IMAGE_TAG ./nginx
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:nginx-$IMAGE_TAG
+          
+          # 3. 다음 단계를 위해 주소 저장
+          echo "fastapi_image=$ECR_REGISTRY/$ECR_REPOSITORY:fastapi-$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "nginx_image=$ECR_REGISTRY/$ECR_REPOSITORY:nginx-$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Update Kubernetes manifests
+        env:
+          NEW_FASTAPI: ${{ steps.build-image.outputs.fastapi_image }}
+          NEW_NGINX: ${{ steps.build-image.outputs.nginx_image }}
+        run: |
+          # infra-project.yaml 내의 이미지 주소를 새 주소로 교체
+          sed -i "s|image: .*project-ecr:fastapi|image: $NEW_FASTAPI|g" ./manifests/infra-project.yaml
+          sed -i "s|image: .*project-ecr:nginx|image: $NEW_NGINX|g" ./manifests/infra-project.yaml
+          
+          # 변경된 YAML을 GitHub에 다시 반영
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git add ./manifests/infra-project.yaml
+          git commit -m "chore: update container images to $GITHUB_SHA"
+          git push
