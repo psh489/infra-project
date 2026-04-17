@@ -1,0 +1,191 @@
+# [2] 서비스 설정 관리 (ConfigMap)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: project-config
+data:
+  DB_HOST: "st6-rds-proxy.proxy-czeisiaqybrb.ap-south-1.rds.amazonaws.com"
+  DB_NAME: "project_db"
+
+---
+# [3] Nginx 상세 설정 (강환님 도메인 적용 버전)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+data:
+  default.conf: |
+    server {
+        listen 80;
+        
+        location / {
+            root /usr/share/nginx/html;
+            index index.html;
+        }
+
+        # [중요] 게시판 API는 강환님 도메인으로 토스
+        location /api/posts {
+            proxy_pass http://kkhwan.cloud/api/posts;
+            proxy_set_header Host kkhwan.cloud;
+        }
+
+        # [중요] 로그인 관련 API는 세훈님 본인 백엔드로
+        location /api {
+            proxy_pass http://fastapi-service:8000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+
+        # 게시판 화면 자체를 불러올 때
+        location /board/ {
+            proxy_pass http://kkhwan.cloud/;
+            proxy_set_header Host kkhwan.cloud;
+        }
+    }
+
+---
+# [4] Backend (FastAPI) Deployment & Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fastapi-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: fastapi
+  template:
+    metadata:
+      labels:
+        app: fastapi
+    spec:
+      containers:
+      - name: fastapi
+        image: 458894893383.dkr.ecr.ap-south-1.amazonaws.com/st6/project-ecr:fastapi
+        ports:
+        - containerPort: 8000
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "200m"
+            memory: "256Mi"
+        env:
+        - name: DB_USER
+          valueFrom: { secretKeyRef: { name: project-secrets, key: db-user } }
+        - name: DB_PASS
+          valueFrom: { secretKeyRef: { name: project-secrets, key: db-pass } }
+        - name: JWT_SECRET
+          valueFrom: { secretKeyRef: { name: project-secrets, key: jwt-secret } }
+        - name: DB_HOST
+          valueFrom: { configMapKeyRef: { name: project-config, key: DB_HOST } }
+        - name: DB_NAME
+          valueFrom: { configMapKeyRef: { name: project-config, key: DB_NAME } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fastapi-service
+spec:
+  selector:
+    app: fastapi
+  ports:
+    - port: 8000
+      targetPort: 8000
+  type: ClusterIP
+
+---
+# [5] Frontend (Nginx) Deployment & Service
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: 458894893383.dkr.ecr.ap-south-1.amazonaws.com/st6/project-ecr:nginx
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "200m"
+            memory: "256Mi"
+        volumeMounts:
+        - name: conf
+          mountPath: /etc/nginx/conf.d/default.conf
+          subPath: default.conf
+      volumes:
+      - name: conf
+        configMap:
+          name: nginx-config
+---
+# [서비스를 다시 내부용으로 잠금]
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+spec:
+  type: ClusterIP
+  selector:
+    app: nginx
+  ports:
+    - port: 80
+      targetPort: 80
+
+---
+# [6] 내부 진입점 관리 (Internal Ingress / ALB)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: sehun-internal-ingress
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/security-groups: "sg-098054a2941572378"
+    alb.ingress.kubernetes.io/healthcheck-path: /
+spec:
+  ingressClassName: alb
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: nginx-service
+                port:
+                  number: 80
+
+---
+# [7] 자동 스케일링 설정 (HPA)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: fastapi-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: fastapi-deployment
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 50

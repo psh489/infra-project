@@ -1,0 +1,5 @@
+# .gitignore 파일 내용
+venv/
+__pycache__/
+*.pyc
+secret.yaml

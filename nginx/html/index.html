@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloud Community</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #e9ecef; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .card { background: white; padding: 40px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 380px; text-align: center; }
+        .hidden { display: none; }
+        h2 { color: #343a40; margin-bottom: 25px; }
+        input { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #dee2e6; border-radius: 6px; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background-color: #007bff; color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; transition: 0.3s; margin-bottom: 10px; }
+        button:hover { background-color: #0056b3; }
+        .nav-links { margin-top: 20px; font-size: 14px; color: #6c757d; }
+        .link-text { color: #007bff; cursor: pointer; text-decoration: none; margin: 0 5px; }
+        .link-text:hover { text-decoration: underline; }
+        .danger-zone { margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px; }
+        .btn-logout { background-color: #6c757d; }
+        .btn-delete { background-color: #dc3545; }
+        .btn-delete:hover { background-color: #bd2130; }
+        /* 추가된 게시판 버튼 스타일 */
+        .btn-board { background-color: #28a745; font-weight: bold; }
+        .btn-board:hover { background-color: #218838; }
+        .welcome-msg { font-size: 18px; color: #28a745; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <div id="view-login">
+        <h2>커뮤니티 로그인</h2>
+        <input type="text" id="login-id" placeholder="아이디">
+        <input type="password" id="login-pw" placeholder="비밀번호">
+        <button onclick="handleLogin()">로그인</button>
+        <div class="nav-links">
+            아직 회원이 아니신가요? <span class="link-text" onclick="showView('view-signup')">회원가입</span>
+            <br><br>
+            <span class="link-text" onclick="showView('view-password')">비밀번호 재설정</span>
+        </div>
+    </div>
+
+    <div id="view-signup" class="hidden">
+        <h2>새 계정 만들기</h2>
+        <input type="text" id="signup-id" placeholder="사용할 아이디">
+        <input type="password" id="signup-pw" placeholder="비밀번호">
+        <input type="text" id="signup-name" placeholder="이름">
+        <input type="email" id="signup-email" placeholder="이메일 (선택)">
+        <button onclick="handleSignup()">가입 완료</button>
+        <div class="nav-links">
+            이미 계정이 있나요? <span class="link-text" onclick="showView('view-login')">로그인으로 이동</span>
+        </div>
+    </div>
+
+    <div id="view-password" class="hidden">
+        <h2>비밀번호 수정</h2>
+        <p style="font-size: 12px; color: #f00;">※ 보안을 위해 로그인 후에만 가능합니다.</p>
+        <input type="password" id="current-pw" placeholder="현재 비밀번호">
+        <input type="password" id="new-pw" placeholder="새로운 비밀번호">
+        <button onclick="handleUpdatePassword()">비밀번호 변경하기</button>
+        <div class="nav-links">
+            <span class="link-text" onclick="showView('view-login')">취소하고 돌아가기</span>
+        </div>
+    </div>
+
+    <div id="view-main" class="hidden">
+        <h2>내 계정 정보</h2>
+        <div id="user-info" class="welcome-msg"></div>
+        <p>커뮤니티에 오신 것을 환영합니다!</p>
+        
+        <button class="btn-board" onclick="goToBoard()">📝 자유 게시판 가기</button>
+        
+        <button class="btn-logout" onclick="handleLogout()">로그아웃</button>
+        
+        <div class="danger-zone">
+            <p style="font-size: 13px; color: #6c757d;">계정을 삭제하시겠습니까?</p>
+            <button class="btn-delete" onclick="handleDeleteAccount()">회원 탈퇴</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    function showView(viewId) {
+        document.querySelectorAll('.card > div').forEach(div => div.classList.add('hidden'));
+        document.getElementById(viewId).classList.remove('hidden');
+    }
+
+    // [추가] 강환님 페이지로 토큰 들고 이동하는 함수
+    function goToBoard() {
+        const token = localStorage.getItem('token');
+        if (!token) return alert("로그인 세션이 만료되었습니다.");
+        // Nginx가 가로채서 강환님 서버로 보내줄 /board/ 경로 사용
+        window.location.href = `/board/?token=${token}`;
+    }
+
+    async function handleSignup() {
+        const payload = {
+            user_id: document.getElementById('signup-id').value,
+            password: document.getElementById('signup-pw').value,
+            username: document.getElementById('signup-name').value,
+            email: document.getElementById('signup-email').value
+        };
+        const res = await fetch('/api/signup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        alert(res.ok ? "가입을 축하합니다! 로그인해주세요." : data.detail);
+        if (res.ok) showView('view-login');
+    }
+
+    async function handleLogin() {
+        const payload = {
+            user_id: document.getElementById('login-id').value,
+            password: document.getElementById('login-pw').value
+        };
+        const res = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok) {
+            localStorage.setItem('token', data.access_token);
+            document.getElementById('user-info').innerText = `👋 안녕하세요, ${data.username}님!`;
+            showView('view-main');
+        } else {
+            alert("로그인 실패: " + data.detail);
+        }
+    }
+
+    async function handleUpdatePassword() {
+        const token = localStorage.getItem('token');
+        if (!token) return alert("로그인이 필요한 서비스입니다.");
+
+        const payload = {
+            current_password: document.getElementById('current-pw').value,
+            new_password: document.getElementById('new-pw').value
+        };
+        const res = await fetch('/api/password', {
+            method: 'PUT',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + token 
+            },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        alert(res.ok ? "비밀번호가 변경되었습니다. 다시 로그인해주세요." : data.detail);
+        if (res.ok) handleLogout();
+    }
+
+    async function handleDeleteAccount() {
+        if (!confirm("정말 탈퇴하시겠습니까? 작성한 모든 정보가 삭제됩니다.")) return;
+        const token = localStorage.getItem('token');
+        const res = await fetch('/api/user', {
+            method: 'DELETE',
+            headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (res.ok) {
+            alert("탈퇴 처리가 완료되었습니다.");
+            handleLogout();
+        } else {
+            const data = await res.json();
+            alert("탈퇴 실패: " + data.detail);
+        }
+    }
+
+    function handleLogout() {
+        localStorage.removeItem('token');
+        showView('view-login');
+    }
+
+    window.onload = async () => {
+        const token = localStorage.getItem('token');
+        if (token) {
+            const res = await fetch('/api/me', {
+                headers: { 'Authorization': 'Bearer ' + token }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                document.getElementById('user-info').innerText = `👋 안녕하세요, ${data.username}님!`;
+                showView('view-main');
+            } else {
+                localStorage.removeItem('token');
+            }
+        }
+    }
+</script>
+</body>
+</html>
