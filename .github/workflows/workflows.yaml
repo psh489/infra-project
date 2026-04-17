@@ -1,17 +1,26 @@
-name: EKS Cloud Infrastructure CI/CD
+name: Build and Push to ECR
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-and-push:
+  deploy:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    permissions:
+      contents: write
 
-      - name: Configure AWS credentials
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -22,37 +31,42 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and Push Docker images
+      - name: Build & Push Images
         id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: st6/project-ecr
-          IMAGE_TAG: ${{ github.sha }}
         run: |
-          # 1. FastAPI 빌드 및 푸시
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:fastapi-$IMAGE_TAG ./fastapi
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:fastapi-$IMAGE_TAG
+          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
           
-          # 2. Nginx 빌드 및 푸시
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:nginx-$IMAGE_TAG ./nginx
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:nginx-$IMAGE_TAG
+          # FastAPI 빌드/푸시
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:fastapi-v$SHORT_SHA ./fastapi
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:fastapi-v$SHORT_SHA
           
-          # 3. 다음 단계를 위해 주소 저장
-          echo "fastapi_image=$ECR_REGISTRY/$ECR_REPOSITORY:fastapi-$IMAGE_TAG" >> $GITHUB_OUTPUT
-          echo "nginx_image=$ECR_REGISTRY/$ECR_REPOSITORY:nginx-$IMAGE_TAG" >> $GITHUB_OUTPUT
+          # Nginx 빌드/푸시
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:nginx-v$SHORT_SHA ./nginx
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:nginx-v$SHORT_SHA
 
-      - name: Update Kubernetes manifests
-        env:
-          NEW_FASTAPI: ${{ steps.build-image.outputs.fastapi_image }}
-          NEW_NGINX: ${{ steps.build-image.outputs.nginx_image }}
+      - name: Update Kubernetes Manifest
         run: |
-          # infra-project.yaml 내의 이미지 주소를 새 주소로 교체
-          sed -i "s|image: .*project-ecr:fastapi|image: $NEW_FASTAPI|g" ./manifests/infra-project.yaml
-          sed -i "s|image: .*project-ecr:nginx|image: $NEW_NGINX|g" ./manifests/infra-project.yaml
+          SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
           
-          # 변경된 YAML을 GitHub에 다시 반영
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
+          # 세훈님의 단일 ECR 리포지토리 패턴에 맞춰 정확히 치환
+          # infra-project.yaml 내의 이미지 주소를 업데이트합니다.
+          sed -i "s|project-ecr:fastapi.*|project-ecr:fastapi-v$SHORT_SHA|g" ./manifests/infra-project.yaml
+          sed -i "s|project-ecr:nginx.*|project-ecr:nginx-v$SHORT_SHA|g" ./manifests/infra-project.yaml
+
+      - name: Commit and Push Changes
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
           git add ./manifests/infra-project.yaml
-          git commit -m "chore: update container images to $GITHUB_SHA"
-          git push
+
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+            git commit -m "Auto-deploy: update images to v$SHORT_SHA [skip ci]"
+            git pull --rebase origin main
+            git push origin main
+          fi

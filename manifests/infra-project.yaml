@@ -61,7 +61,7 @@ spec:
     spec:
       containers:
       - name: fastapi
-        image: 458894893383.dkr.ecr.ap-south-1.amazonaws.com/st6/project-ecr:fastapi
+        image: 458894893383.dkr.ecr.ap-south-1.amazonaws.com/st6/project-ecr:fastapi-v1
         ports:
         - containerPort: 8000
         resources:
@@ -113,7 +113,7 @@ spec:
     spec:
       containers:
       - name: nginx
-        image: 458894893383.dkr.ecr.ap-south-1.amazonaws.com/st6/project-ecr:nginx
+        image: 458894893383.dkr.ecr.ap-south-1.amazonaws.com/st6/project-ecr:nginx-v1
         ports:
         - containerPort: 80
         resources:
