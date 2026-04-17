@@ -8,7 +8,7 @@ data:
   DB_NAME: "project_db"
 
 ---
-# [3] Nginx 상세 설정 (강환님 도메인 적용 버전)
+# [3] Nginx 상세 설정 (강환님 ALB DNS 직접 연결 버전)
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -23,23 +23,25 @@ data:
             index index.html;
         }
 
-        # [중요] 게시판 API는 강환님 도메인으로 토스
+        # [중요] 게시판 API - 강환님 로드밸런서 DNS로 직접 토스
         location /api/posts {
-            proxy_pass https://kkhwan.cloud/api/posts;
+            proxy_pass http://std5-project-alb-1726384159.ap-south-1.elb.amazonaws.com/api/posts;
             proxy_set_header Host kkhwan.cloud;
+            proxy_set_header X-Real-IP $remote_addr;
         }
 
-        # [중요] 로그인 관련 API는 세훈님 본인 백엔드로
+        # [중요] 로그인 관련 API - 세훈님 본인 백엔드로
         location /api {
             proxy_pass http://fastapi-service:8000;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
         }
 
-        # 게시판 화면 자체를 불러올 때
+        # 게시판 화면 - 강환님 로드밸런서 DNS로 직접 토스
         location /board/ {
-            proxy_pass https://kkhwan.cloud/;
+            proxy_pass http://std5-project-alb-1726384159.ap-south-1.elb.amazonaws.com/;
             proxy_set_header Host kkhwan.cloud;
+            proxy_set_header X-Real-IP $remote_addr;
         }
     }
 
@@ -61,6 +63,7 @@ spec:
     spec:
       containers:
       - name: fastapi
+        # 로봇이 업데이트한 최신 태그 반영
         image: 458894893383.dkr.ecr.ap-south-1.amazonaws.com/st6/project-ecr:fastapi-v2aa50c7
         ports:
         - containerPort: 8000
@@ -113,6 +116,7 @@ spec:
     spec:
       containers:
       - name: nginx
+        # 로봇이 업데이트한 최신 태그 반영
         image: 458894893383.dkr.ecr.ap-south-1.amazonaws.com/st6/project-ecr:nginx-v2aa50c7
         ports:
         - containerPort: 80
@@ -132,7 +136,6 @@ spec:
         configMap:
           name: nginx-config
 ---
-# [서비스를 다시 내부용으로 잠금]
 apiVersion: v1
 kind: Service
 metadata:
