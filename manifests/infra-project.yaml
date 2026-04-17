@@ -25,7 +25,7 @@ data:
 
         # [중요] 게시판 API는 강환님 도메인으로 토스
         location /api/posts {
-            proxy_pass http://kkhwan.cloud/api/posts;
+            proxy_pass https://kkhwan.cloud/api/posts;
             proxy_set_header Host kkhwan.cloud;
         }
 
@@ -38,7 +38,7 @@ data:
 
         # 게시판 화면 자체를 불러올 때
         location /board/ {
-            proxy_pass http://kkhwan.cloud/;
+            proxy_pass https://kkhwan.cloud/;
             proxy_set_header Host kkhwan.cloud;
         }
     }
