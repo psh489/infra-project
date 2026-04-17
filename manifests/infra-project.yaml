@@ -64,7 +64,7 @@ spec:
       containers:
       - name: fastapi
         # 로봇이 업데이트한 최신 태그 반영
-        image: 458894893383.dkr.ecr.ap-south-1.amazonaws.com/st6/project-ecr:fastapi-v2aa50c7
+        image: 458894893383.dkr.ecr.ap-south-1.amazonaws.com/st6/project-ecr:fastapi-v8657f82
         ports:
         - containerPort: 8000
         resources:
@@ -117,7 +117,7 @@ spec:
       containers:
       - name: nginx
         # 로봇이 업데이트한 최신 태그 반영
-        image: 458894893383.dkr.ecr.ap-south-1.amazonaws.com/st6/project-ecr:nginx-v2aa50c7
+        image: 458894893383.dkr.ecr.ap-south-1.amazonaws.com/st6/project-ecr:nginx-v8657f82
         ports:
         - containerPort: 80
         resources:
